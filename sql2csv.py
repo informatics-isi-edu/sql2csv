@@ -7,6 +7,7 @@ import sys
 import datetime
 import json
 
+
 py_dic = { str: 'str', buffer: 'buffer', int: 'int', float: 'float', datetime.datetime: 'datetime.datetime',
            datetime.date: 'datetime.date',datetime.time: 'datetime.time', bool: 'bool', 
            unicode: 'unicode', bytearray: 'bytearray' , long: 'long' }
@@ -55,17 +56,15 @@ def csvescape(v):
         except:
             print 'type: %s v: %s' % (type(v), v)
             raise
-        return ''.join([ '"', v.encode("utf-8"), '"' ])       
+        #return ''.join([ '"', v.encode("utf-8"), '"' ])       
+        return v.encode("utf-8")       
 
 
 def write_csv(cursor,csv_file):
     header = []
     for colinfo in cursor.description:
         colname = colinfo[0]
-        coltype = py_dic[colinfo[1]]
         header.append(colname)
-        coldesc = ' '.join( [ csvescape(colname) , csvescape(coltype)] )
-        sys.stderr.write( coldesc + ',\n')
 
     if not os.path.exists(os.path.dirname(csv_file)):
         os.makedirs(os.path.dirname(csv_file))
@@ -83,7 +82,7 @@ def write_csv(cursor,csv_file):
             writer.writerow(values)
 
 
-def write_manifest(inputs_js):
+def write_manifest(inputs_js,col_defs):
 
     manifest={}
     extracts =[]
@@ -92,14 +91,13 @@ def write_manifest(inputs_js):
         extract['table_data']=inputs_js['CSV_TARGET_DIRECTORY']+PATH_SEP+ee['schema_name']+PATH_SEP+ee['table_name']+'.csv'
         extract['schema_name']=ee['schema_name']
         extract['table_name']=ee['table_name']
-        extract['column_definitions']=[{'name':'col1','type':'text'},{'name':'col2','type':'int'}]
-        extract['object_columns']=[]        
+        extract['column_definitions']=col_defs[ee['table_name']]
+        extract['object_columns']=ee['bulk_data_columns']        
         extracts.append(extract)
 
     manifest['extracts']=extracts
     manifest['source']=inputs_js['SERVER_NAME']
     manifest['destination']='ERMREST in vm-deb-028.misd.isi.edu'
-
     return manifest
 
 
@@ -150,11 +148,9 @@ input_file.js example:
     host = inputs_js['DNS']
     database = inputs_js['DATABASE_NAME']
     user = inputs_js['USER_NAME']
-    #password = inputs_js['PASSWORD']
     password = os.environ['DBPASSWORD']
 
-    py_dic = { str: 'str', buffer: 'buffer', int: 'int', float: 'float', datetime.datetime: 'datetime.datetime',bool: 'bool' }
-
+    col_defs={}
     for extract in inputs_js['EXTRACTS']:
         sql_file=extract['query_file']
         sys.stdout.write(' QUERY FILE=%s \n' % sql_file) 
@@ -168,6 +164,7 @@ input_file.js example:
         for colinfo in cursor.description:
             col_types[csvescape(colinfo[0])]=csvescape(py_dic[colinfo[1]])
 
+        col_defs[extract['table_name']]=col_types
         for col in col_types:
             sys.stdout.write('%s[%s]\n' % (col,col_types[col]))
 
@@ -177,7 +174,7 @@ input_file.js example:
         write_csv(cursor,csv_file)
 
         
-    manifest=write_manifest(inputs_js)
+    manifest=write_manifest(inputs_js,col_defs)
     sys.stdout.write('MANIFEST='+json.dumps(manifest,encoding='utf8')+'\n')
  
     with open('manifest.js', 'w') as f:
